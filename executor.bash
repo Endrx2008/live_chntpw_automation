@@ -1,4 +1,20 @@
 #!/bin/bash
+# Smonta tutto
+unmount_off() {
+  for part in $partitions; do
+    mount_point="/mnt/windows/$(basename $part)"
+    clear
+    sudo umount "$mount_point" && echo "smontate tutte le partizioni"
+    sudo rm -rf "$mount_point" && echo "cartella di montaggio eliminata"
+  done
+}
+
+# stacca stacca (spegne)
+poweroff() {
+  echo "tutte le operazioni completate"
+  read -p "arrivederci..."
+  sudo poweroff
+}
 
 # Trova le partizioni NTFS
 partitions=$(lsblk -o NAME,FSTYPE | grep -i ntfs | awk '{print "/dev/"$1}' | sed 's/[^a-zA-Z0-9\/\-]//g')
@@ -10,12 +26,12 @@ if [ -z "$partitions" ]; then
 fi
 
 # Crea la directory di mount
-mkdir -p /mnt/windows
+sudo mkdir -p /mnt/windows
 
 # Monta le partizioni NTFS
 for part in $partitions; do
   mount_point="/mnt/windows/$(basename $part)"
-  mkdir -p "$mount_point"
+  sudo mkdir -p "$mount_point"
   sudo mount -t ntfs-3g "$part" "$mount_point" && echo "Partizione $part montata in $mount_point" || echo "Errore durante la montatura di $part"
 done
 
@@ -30,6 +46,7 @@ echo "Seleziona una partizione:"
 select folder in $folders
 do
   if [ -n "$folder" ]; then
+    clear
     echo "Hai selezionato: $folder"
     break
   else
@@ -40,11 +57,13 @@ done
 # Elenco degli utenti nel file SAM
 sudo chntpw -l "$folder/Windows/System32/config/SAM" > users_list.txt
 
+
 # Controlla se ci sono utenti trovati
 if [[ ! -s users_list.txt ]]; then
   echo "Nessun utente trovato nel file SAM."
-  rm users_list.txt
-  exit 1
+  sudo rm users_list.txt
+  unmount_off
+  poweroff
 fi
 
 # Mostra gli account trovati e memorizza i nomi
@@ -57,13 +76,14 @@ while read -r line; do
   echo "$counter) $USERNAME (RID: $RID)"
   ((counter++))
 done < users_list.txt
-rm users_list.txt
+sudo rm users_list.txt
 
 # Chiede all'utente di selezionare un account
-read -p "Seleziona un account inserendo il numero corrispondente: " choice
+read -p "Seleziona un account inserendo il numero corrispondente (se da errore premi invio): " choice
 if [[ -z "${users[$choice]}" ]]; then
   echo "Selezione non valida."
-  exit 1
+  unmount_off
+  poweroff
 fi
 
 # Ottieni il nome utente selezionato
@@ -73,3 +93,6 @@ sam_file="$folder/Windows/System32/config/SAM"
 
 # Esegui chntpw per l'utente selezionato
 sudo chntpw -u "$selected_user" "$sam_file"
+
+unmount_off
+poweroff
